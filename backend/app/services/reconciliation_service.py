@@ -1,0 +1,225 @@
+"""Orchestrates Tier1 → Tier2 → Anomaly Agent with idempotent skips."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any
+from uuid import UUID, uuid4
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.db.models import Decision, Transaction
+from app.matching.embedding_provider import EmbeddingProvider
+from app.matching.tier1_rules import MatchResult, try_exact_match
+from app.matching.tier2_semantic import try_semantic_match
+from app.services.audit_service import record_decision
+from app.services.n8n_service import notify_n8n, should_notify
+from app.services.review_service import apply_review_threshold
+
+# Once the pipeline (or a human) has decided, re-runs must not touch the row again.
+RESOLVED_STATUSES = frozenset({"matched", "flagged", "pending_review"})
+
+ScoreFn = Callable[[Transaction, Any], Awaitable[dict[str, Any]]]
+
+
+def is_open_for_matching(transaction: Transaction) -> bool:
+    """Only unmatched rows are eligible for another matching pass."""
+    return transaction.status == "unmatched"
+
+
+def count_decisions(db: Session) -> int:
+    return int(db.scalar(select(func.count()).select_from(Decision)) or 0)
+
+
+def _apply_match(
+    db: Session,
+    bank_tx: Transaction,
+    *,
+    matched_id: UUID,
+    decision: str,
+    method: str,
+    confidence: float,
+    reasoning: dict[str, Any] | None,
+    matching_run_id: UUID,
+    model_used: str | None = None,
+) -> Decision:
+    row = record_decision(
+        db,
+        transaction_id=bank_tx.id,
+        decision=decision,
+        method=method,
+        confidence=confidence,
+        matched_transaction_id=matched_id,
+        reasoning=reasoning,
+        model_used=model_used,
+        matching_run_id=matching_run_id,
+    )
+    bank_tx.status = decision
+    db.add(bank_tx)
+    ledger = db.get(Transaction, matched_id)
+    if ledger is not None and is_open_for_matching(ledger):
+        ledger.status = "matched" if decision == "matched" else ledger.status
+        if decision == "matched":
+            db.add(ledger)
+    db.flush()
+    return row
+
+
+def _apply_agent_outcome(
+    db: Session,
+    bank_tx: Transaction,
+    agent_result: dict[str, Any],
+    matching_run_id: UUID,
+) -> Decision:
+    risk = float(agent_result["risk_score"])
+    confidence = risk
+    intended = "flagged" if risk >= settings.REVIEW_CONFIDENCE_THRESHOLD else "matched"
+    decision = apply_review_threshold(confidence, intended=intended)
+    row = record_decision(
+        db,
+        transaction_id=bank_tx.id,
+        decision=decision,
+        method="llm_agent",
+        confidence=confidence,
+        reasoning=agent_result,
+        model_used=settings.LLM_PROVIDER,
+        matching_run_id=matching_run_id,
+    )
+    bank_tx.status = decision
+    db.add(bank_tx)
+    db.flush()
+    return row
+
+
+async def _default_score(transaction: Transaction, context: Any) -> dict[str, Any]:
+    # Lazy import avoids circular: services → reconciliation → agent → services.cost_tracker
+    from app.agent.anomaly_agent import score_anomaly
+
+    return await score_anomaly(transaction, context)
+
+
+def run_reconciliation(
+    db: Session,
+    run_id: UUID | None = None,
+    *,
+    score_fn: ScoreFn | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
+    skip_semantic: bool = False,
+    notify: bool = True,
+    bank_rows: list[Transaction] | None = None,
+    ledger_rows: list[Transaction] | None = None,
+) -> dict[str, Any]:
+    """Run Tier1 → Tier2 → Agent.
+
+    Transactions that are already matched / flagged / pending_review are skipped.
+    Every decision row carries ``matching_run_id``. Running twice on the same data
+    must not increase the decisions count.
+
+    ``bank_rows`` / ``ledger_rows`` let unit tests inject in-memory transactions
+    without SQLAlchemy select plumbing.
+    """
+    from app.agent.anomaly_agent import RunContext
+
+    matching_run_id = run_id or uuid4()
+    score = score_fn or _default_score
+    context = RunContext()
+
+    if bank_rows is None:
+        bank_rows = list(
+            db.scalars(
+                select(Transaction).where(
+                    Transaction.source == "bank",
+                    Transaction.status == "unmatched",
+                )
+            ).all()
+        )
+    else:
+        bank_rows = [tx for tx in bank_rows if is_open_for_matching(tx)]
+
+    if ledger_rows is None:
+        ledger_open = list(
+            db.scalars(
+                select(Transaction).where(
+                    Transaction.source == "ledger",
+                    Transaction.status == "unmatched",
+                )
+            ).all()
+        )
+    else:
+        ledger_open = [tx for tx in ledger_rows if is_open_for_matching(tx)]
+
+    try:
+        resolved_count = db.scalar(
+            select(func.count()).select_from(Transaction).where(
+                Transaction.source == "bank",
+                Transaction.status.in_(tuple(RESOLVED_STATUSES)),
+            )
+        )
+        skipped = int(resolved_count or 0)
+    except Exception:
+        skipped = 0
+
+    summary: dict[str, Any] = {
+        "matching_run_id": str(matching_run_id),
+        "processed": 0,
+        "skipped_resolved": skipped,
+        "exact_rule": 0,
+        "semantic_match": 0,
+        "llm_agent": 0,
+        "decisions_written": 0,
+    }
+
+    for bank_tx in bank_rows:
+        if not is_open_for_matching(bank_tx):
+            continue
+        summary["processed"] += 1
+
+        tier1 = try_exact_match(bank_tx, ledger_open)
+        if tier1.matched and tier1.matched_id is not None:
+            _apply_match(
+                db,
+                bank_tx,
+                matched_id=tier1.matched_id,
+                decision="matched",
+                method="exact_rule",
+                confidence=1.0,
+                reasoning={"rule": "amount+date"},
+                matching_run_id=matching_run_id,
+            )
+            ledger_open = [row for row in ledger_open if row.id != tier1.matched_id]
+            summary["exact_rule"] += 1
+            summary["decisions_written"] += 1
+            continue
+
+        tier2 = MatchResult(matched=False)
+        if not skip_semantic:
+            tier2 = try_semantic_match(bank_tx, db, provider=embedding_provider)
+        if tier2.matched and tier2.matched_id is not None:
+            decision = apply_review_threshold(tier2.confidence, intended="matched")
+            _apply_match(
+                db,
+                bank_tx,
+                matched_id=tier2.matched_id,
+                decision=decision,
+                method="semantic_match",
+                confidence=tier2.confidence,
+                reasoning={"similarity": tier2.confidence},
+                matching_run_id=matching_run_id,
+            )
+            if decision == "matched":
+                ledger_open = [row for row in ledger_open if row.id != tier2.matched_id]
+            summary["semantic_match"] += 1
+            summary["decisions_written"] += 1
+            continue
+
+        agent_result = asyncio.run(score(bank_tx, context))
+        row = _apply_agent_outcome(db, bank_tx, agent_result, matching_run_id)
+        summary["llm_agent"] += 1
+        summary["decisions_written"] += 1
+        if notify and should_notify(row):
+            asyncio.run(notify_n8n(row))
+
+    return summary
