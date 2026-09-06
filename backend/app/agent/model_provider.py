@@ -114,7 +114,7 @@ class GeminiProvider:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3.6-flash",
     ) -> None:
         self.api_key = api_key if api_key is not None else settings.GOOGLE_API_KEY
         self.model = model
@@ -122,6 +122,9 @@ class GeminiProvider:
     async def generate_structured(self, prompt: str, schema: dict) -> dict:
         async def _call() -> dict:
             import google.generativeai as genai
+
+            if not self.api_key:
+                raise RuntimeError("GOOGLE_API_KEY is not set")
 
             genai.configure(api_key=self.api_key)
             model = genai.GenerativeModel(

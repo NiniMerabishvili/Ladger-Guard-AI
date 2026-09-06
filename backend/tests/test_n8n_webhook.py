@@ -1,5 +1,7 @@
 """n8n notify payload and webhook secret checks."""
 
+from datetime import date
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -7,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.db.models import Decision
+from app.db.models import Decision, Transaction
 from app.db.session import get_db
 from app.main import app
 from app.services.n8n_service import build_n8n_payload, should_notify
@@ -39,6 +41,27 @@ def test_payload_matches_plan_fields() -> None:
     assert payload["reasoning"] == "New vendor wire"
     assert payload["method"] == "llm_agent"
     assert payload["high_priority"] is False
+    assert payload["task_name"] == f"pending_review — {row.transaction_id}"
+
+
+def test_payload_task_name_uses_transaction_description() -> None:
+    row = _decision()
+    tx = Transaction(
+        id=row.transaction_id,
+        source="bank",
+        date=date(2026, 7, 31),
+        amount=Decimal("750.52"),
+        currency="USD",
+        description="LINKEDIN PREMIUM",
+        counterparty="LINKEDIN CORP",
+        status="pending_review",
+    )
+    payload = build_n8n_payload(row, transaction=tx)
+    assert payload["task_name"] == "LINKEDIN PREMIUM"
+    assert payload["description"] == "LINKEDIN PREMIUM"
+    assert payload["counterparty"] == "LINKEDIN CORP"
+    assert payload["amount"] == 750.52
+    assert payload["date"] == "2026-07-31"
 
 
 def test_high_priority_when_risk_score_above_0_8() -> None:

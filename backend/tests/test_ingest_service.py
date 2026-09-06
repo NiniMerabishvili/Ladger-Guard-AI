@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from app.schemas.transaction import TransactionCreate
-from app.services.ingest_service import ingest_files, persist_transactions
+from app.services.ingest_service import ingest_files, ingest_uploads, persist_transactions
 
 
 def test_persist_transactions_marks_rows_unmatched() -> None:
@@ -44,3 +44,15 @@ def test_ingest_files_reads_both_csvs(tmp_path: Path) -> None:
     result = ingest_files(db, bank_path=bank, ledger_path=ledger)
     assert result == {"bank_count": 1, "ledger_count": 1, "total": 2}
     assert db.add.call_count == 2
+
+
+def test_ingest_uploads_from_bytes() -> None:
+    header = b"transaction_id,date,amount,currency,description,counterparty\n"
+    bank = header + b"b1,2026-09-01,5000.00,USD,UNKNOWN VENDOR WIRE,ACME LLC\n"
+    ledger = header + b"l1,2026-09-01,4.50,USD,STARBUCKS CARD,STARBUCKS\n"
+    db = MagicMock()
+    result = ingest_uploads(db, bank_bytes=bank, ledger_bytes=ledger)
+    assert result["bank_count"] == 1
+    assert result["ledger_count"] == 1
+    assert result["total"] == 2
+    assert db.execute.call_count == 1  # TRUNCATE workspace

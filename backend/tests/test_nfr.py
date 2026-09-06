@@ -74,7 +74,7 @@ def test_schema_failure_never_becomes_high_risk_flag() -> None:
             "explanation": "guessing wildly",
         }
     )
-    result = asyncio.run(score_anomaly(FakeTx(), RunContext(), provider=provider))
+    result = asyncio.run(score_anomaly(FakeTx(), RunContext(llm_budget=2), provider=provider))
     assert result == fallback_anomaly()
     assert result["risk_score"] == FALLBACK_RISK_SCORE
     assert result["risk_score"] < 0.7
@@ -96,7 +96,7 @@ def test_successful_llm_call_is_cost_tracked() -> None:
         }
     )
     provider.model = "claude-sonnet-4-6"  # type: ignore[attr-defined]
-    asyncio.run(score_anomaly(FakeTx(), RunContext(), provider=provider))
+    asyncio.run(score_anomaly(FakeTx(), RunContext(llm_budget=2), provider=provider))
     assert get_estimated_cost_usd() > 0
     assert get_call_log()[0].model == "claude-sonnet-4-6"
 

@@ -14,9 +14,9 @@ from app.config import settings
 from app.db.models import Decision, Transaction
 from app.matching.embedding_provider import EmbeddingProvider
 from app.matching.tier1_rules import MatchResult, try_exact_match
-from app.matching.tier2_semantic import try_semantic_match
+from app.matching.tier2_semantic import ensure_embeddings, try_semantic_match
 from app.services.audit_service import record_decision
-from app.services.n8n_service import notify_n8n, should_notify
+from app.services.n8n_service import build_n8n_payload, should_notify
 from app.services.review_service import apply_review_threshold
 
 # Once the pipeline (or a human) has decided, re-runs must not touch the row again.
@@ -120,12 +120,21 @@ def run_reconciliation(
 
     ``bank_rows`` / ``ledger_rows`` let unit tests inject in-memory transactions
     without SQLAlchemy select plumbing.
+
+    ClickUp/n8n payloads are collected in ``notify_payloads`` so the HTTP route can
+    send them in the background after commit (keeps reconcile itself fast).
     """
-    from app.agent.anomaly_agent import RunContext
+    from app.agent.anomaly_agent import RunContext, heuristic_score
 
     matching_run_id = run_id or uuid4()
     score = score_fn or _default_score
     context = RunContext()
+    # One provider for the whole run — avoid reloading SentenceTransformer per row.
+    provider = embedding_provider
+    if provider is None and not skip_semantic:
+        from app.matching.embedding_provider import get_embedding_provider
+
+        provider = get_embedding_provider()
 
     if bank_rows is None:
         bank_rows = list(
@@ -170,8 +179,11 @@ def run_reconciliation(
         "semantic_match": 0,
         "llm_agent": 0,
         "decisions_written": 0,
+        "notify_payloads": [],
     }
 
+    # Tier 1 first (no embeddings), then batch-embed only leftovers + open ledger.
+    after_tier1: list[Transaction] = []
     for bank_tx in bank_rows:
         if not is_open_for_matching(bank_tx):
             continue
@@ -193,10 +205,17 @@ def run_reconciliation(
             summary["exact_rule"] += 1
             summary["decisions_written"] += 1
             continue
+        after_tier1.append(bank_tx)
 
+    agent_leftovers: list[Transaction] = []
+
+    if after_tier1 and not skip_semantic and provider is not None:
+        ensure_embeddings(db, after_tier1 + ledger_open, provider)
+
+    for bank_tx in after_tier1:
         tier2 = MatchResult(matched=False)
         if not skip_semantic:
-            tier2 = try_semantic_match(bank_tx, db, provider=embedding_provider)
+            tier2 = try_semantic_match(bank_tx, db, provider=provider)
         if tier2.matched and tier2.matched_id is not None:
             decision = apply_review_threshold(tier2.confidence, intended="matched")
             _apply_match(
@@ -214,12 +233,28 @@ def run_reconciliation(
             summary["semantic_match"] += 1
             summary["decisions_written"] += 1
             continue
+        agent_leftovers.append(bank_tx)
 
-        agent_result = asyncio.run(score(bank_tx, context))
-        row = _apply_agent_outcome(db, bank_tx, agent_result, matching_run_id)
-        summary["llm_agent"] += 1
-        summary["decisions_written"] += 1
-        if notify and should_notify(row):
-            asyncio.run(notify_n8n(row))
+    if agent_leftovers:
+        # Rank leftovers so the limited Gemini budget hits the riskiest rows first.
+        ranked = sorted(
+            agent_leftovers,
+            key=lambda tx: float(heuristic_score(tx, context)["risk_score"]),
+            reverse=True,
+        )
+
+        async def _run_agent_pass() -> None:
+            scored: list[tuple[Transaction, dict[str, Any]]] = []
+            for bank_tx in ranked:
+                scored.append((bank_tx, await score(bank_tx, context)))
+
+            for bank_tx, agent_result in scored:
+                row = _apply_agent_outcome(db, bank_tx, agent_result, matching_run_id)
+                summary["llm_agent"] += 1
+                summary["decisions_written"] += 1
+                if notify and should_notify(row):
+                    summary["notify_payloads"].append(build_n8n_payload(row, transaction=bank_tx))
+
+        asyncio.run(_run_agent_pass())
 
     return summary

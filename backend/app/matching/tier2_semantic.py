@@ -74,20 +74,35 @@ def store_embedding(
     return vector
 
 
+def ensure_embeddings(
+    db: Session,
+    rows: list[Transaction],
+    provider: EmbeddingProvider,
+) -> int:
+    """Batch-embed any rows missing vectors (one encode call for the whole set)."""
+    missing = [row for row in rows if row.embedding is None]
+    if not missing:
+        return 0
+    vectors = provider.embed_many([row.description for row in missing])
+    for row, vector in zip(missing, vectors, strict=True):
+        row.embedding = vector
+        db.add(row)
+    db.flush()
+    return len(missing)
+
+
 def embed_unmatched_transactions(db: Session, provider: EmbeddingProvider | None = None) -> int:
     """Embed unmatched rows that do not yet have a vector."""
     provider = provider or get_embedding_provider()
-    rows = db.scalars(
-        select(Transaction).where(
-            Transaction.status == "unmatched",
-            Transaction.embedding.is_(None),
-        )
-    ).all()
-    for row in rows:
-        store_embedding(db, row, provider)
-    if rows:
-        db.flush()
-    return len(rows)
+    rows = list(
+        db.scalars(
+            select(Transaction).where(
+                Transaction.status == "unmatched",
+                Transaction.embedding.is_(None),
+            )
+        ).all()
+    )
+    return ensure_embeddings(db, rows, provider)
 
 
 def search_similar(

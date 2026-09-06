@@ -193,6 +193,34 @@ def test_ingest_endpoint_persists_normalized_rows() -> None:
     db.commit.assert_called_once()
 
 
+def test_ingest_endpoint_accepts_multipart_csvs() -> None:
+    db = MagicMock()
+
+    def _override() -> MagicMock:
+        yield db
+
+    header = "transaction_id,date,amount,currency,description,counterparty\n"
+    bank = (header + "b1,2026-09-01,10.00,USD,COFFEE,CAFE\n").encode()
+    ledger = (header + "l1,2026-09-01,10.00,USD,Coffee POS,CAFE\n").encode()
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/ingest",
+            files={
+                "bank_file": ("bank.csv", bank, "text/csv"),
+                "ledger_file": ("ledger.csv", ledger, "text/csv"),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    db.commit.assert_called_once()
+
+
 def test_reconcile_run_endpoint_returns_summary() -> None:
     db = MagicMock()
     run_id = uuid4()
