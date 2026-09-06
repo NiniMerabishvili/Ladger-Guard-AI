@@ -151,10 +151,18 @@ Redeploy backend (or restart) so CORS picks it up.
 
 `frontend/vercel.json` already rewrites all paths to `index.html` so `/review` and `/transactions/:id` work on refresh.
 
-### 4.5 Verify
+### 4.6 Stale UI after redeploy
 
-1. Open the Vercel URL → Dashboard loads metrics (may be zeros until ingest).
-2. Browser DevTools → Network: calls go to `VITE_API_URL`, not relative localhost.
+GitHub can be current while the browser still shows an old Vercel build. Check:
+
+1. **Root Directory** is `frontend` (Settings → General).
+2. **Production Branch** is `main`.
+3. Deployments → open the latest **Production** deployment (not an old Preview URL) and confirm the commit SHA matches GitHub.
+4. Hard refresh (`Ctrl+Shift+R`) or open the site in a private window.
+5. Sidebar shows `build <sha>` — it must match the short SHA of the commit you expect.
+6. Env `VITE_API_URL` must be your Railway backend URL (no trailing slash), then **Redeploy** (Vite bakes env in at build time).
+
+`vercel.json` sets `Cache-Control: no-cache` on `index.html` so the CDN does not keep an old entry HTML that points at outdated JS.
 
 ---
 
@@ -197,7 +205,7 @@ Then open the Vercel Review queue and Approve one item.
 | Frontend calls localhost | `VITE_API_URL` missing → rebuild on Vercel |
 | OOM on Railway | Bump memory, or keep Tier 2 off until you have RAM (`local` model is heavy) |
 | ClickUp empty | Check n8n execution log; body often under `$json.body.*` on Cloud |
-| `Can't locate revision identified by '0002_projects'` | Supabase is already stamped at `0002_projects`, but the deploy image is missing that migration. Set Railway **Root Directory** to `backend`, redeploy from latest `main`, and **clear build cache**. Confirm the build log shows the Dockerfile assert for `0002_projects.py`. |
+| `Can't locate revision identified by '0002_projects'` | Your **Supabase DB is already migrated**. The failing logs are usually an **old Railway deployment crash-looping** (same deployment id), not a fresh build. Fix: (1) Railway service **Root Directory = `backend`**, (2) remove any custom start command that only runs `alembic upgrade head`, or set it to `python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port $PORT`, (3) **Deploy → Redeploy** from latest `main` with clear build cache. Immediate unblock: set start command to `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (skip alembic — schema is already applied). |
 
 ---
 

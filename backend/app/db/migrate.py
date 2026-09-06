@@ -51,25 +51,14 @@ def main() -> int:
     current = _db_revision(engine)
     print(f"database revision={current!r}")
 
+    # Production DB is already migrated — never block boot on a missing revision file.
     if current is not None and current not in known:
-        # DB was migrated (e.g. locally) but this image is missing that revision file.
-        if current in {"0002_projects"} and _schema_has_projects(engine) and "0002_projects" not in known:
+        if _schema_has_projects(engine):
             print(
-                "ERROR: database is at 0002_projects but this image has no matching "
-                "migration file. Redeploy the latest backend image (Root Directory = backend) "
-                "and clear the build cache.",
+                f"WARNING: database revision {current!r} is missing from this image, "
+                "but projects schema is present — skipping alembic and starting the API.",
                 file=sys.stderr,
             )
-            return 1
-        if _schema_has_projects(engine) and heads == ["0002_projects"]:
-            # Rare: stamp mismatch with correct head available — realign via SQL.
-            print(f"Repairing alembic_version {current!r} → {heads[0]!r}")
-            with engine.begin() as conn:
-                conn.execute(text("DELETE FROM alembic_version"))
-                conn.execute(
-                    text("INSERT INTO alembic_version (version_num) VALUES (:v)"),
-                    {"v": heads[0]},
-                )
             return 0
         print(
             f"ERROR: database revision {current!r} is not in this image. "
@@ -78,9 +67,20 @@ def main() -> int:
         )
         return 1
 
+    if current is not None and heads and current in heads:
+        print("already at head — skipping upgrade")
+        return 0
+
     try:
         command.upgrade(cfg, "head")
     except CommandError as exc:
+        message = str(exc)
+        if "Can't locate revision" in message and _schema_has_projects(engine):
+            print(
+                f"WARNING: {message} — schema already has projects; starting API anyway.",
+                file=sys.stderr,
+            )
+            return 0
         print(f"ERROR: alembic upgrade failed: {exc}", file=sys.stderr)
         return 1
 

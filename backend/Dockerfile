@@ -16,5 +16,7 @@ assert '0002_projects' in s.get_heads(), s.get_heads()"
 
 EXPOSE 8000
 
-# Railway/Render set $PORT; default 8000 for local Docker.
-CMD ["sh", "-c", "python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Do NOT run alembic on boot — Railway was crash-looping when the DB stamp
+# disagreed with the image. Schema is applied via `python -m app.db.migrate`
+# locally / in CI. Production Supabase is already migrated.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

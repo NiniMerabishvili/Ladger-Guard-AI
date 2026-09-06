@@ -14,7 +14,7 @@ export function AppShell() {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[248px_1fr]">
-      <aside className="border-b border-line bg-ink/92 px-5 py-7 backdrop-blur-md lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+      <aside className="flex flex-col border-b border-line bg-ink/92 px-5 py-7 backdrop-blur-md lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="mb-9 flex items-start gap-3">
           <img
             src="/logo.png"
@@ -50,6 +50,9 @@ export function AppShell() {
             <span className="text-ink-text">{activeProjectId.slice(0, 8)}…</span>
           </p>
         ) : null}
+        <p className="mt-auto pt-8 font-mono text-[10px] text-muted" title="Deployed git commit">
+          build {__APP_COMMIT__}
+        </p>
       </aside>
       <div className="px-[18px] py-6 pb-10 lg:px-10 lg:py-8 lg:pb-12">
         <RouteErrorBoundary>

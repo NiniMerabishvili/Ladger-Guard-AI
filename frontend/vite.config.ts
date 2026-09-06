@@ -20,6 +20,12 @@ function toApi(path: string): [string, ProxyOptions] {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    // Vercel injects this at build time so the UI can show which commit was deployed.
+    __APP_COMMIT__: JSON.stringify(
+      (process.env.VERCEL_GIT_COMMIT_SHA || process.env.npm_package_version || "local").slice(0, 7),
+    ),
+  },
   server: {
     port: 5173,
     proxy: Object.fromEntries(

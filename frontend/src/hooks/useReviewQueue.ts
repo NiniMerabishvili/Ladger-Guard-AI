@@ -34,7 +34,7 @@ export function useReviewQueue() {
         matched_transaction_id: matchedTransactionId,
       }),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey });
+      await queryClient.cancelQueries({ queryKey: queueKey });
       const previous = queryClient.getQueryData<Transaction[]>(queueKey);
       queryClient.setQueryData<Transaction[]>(
         queueKey,

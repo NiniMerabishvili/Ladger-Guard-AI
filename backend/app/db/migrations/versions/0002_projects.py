@@ -16,9 +16,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Idempotent so re-deploys / stamp repairs never fail if schema already exists.
     op.execute(
         """
-        CREATE TABLE projects (
+        CREATE TABLE IF NOT EXISTS projects (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR(200) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'open',
@@ -30,17 +31,23 @@ def upgrade() -> None:
         );
         """
     )
-    op.execute("CREATE INDEX idx_projects_created ON projects(created_at DESC);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at DESC);")
 
     op.execute(
         """
         INSERT INTO projects (id, name, status, summary)
         SELECT gen_random_uuid(), 'Legacy workspace', 'completed', NULL
-        WHERE EXISTS (SELECT 1 FROM transactions LIMIT 1);
+        WHERE EXISTS (SELECT 1 FROM transactions LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM projects LIMIT 1);
         """
     )
 
-    op.execute("ALTER TABLE transactions ADD COLUMN project_id UUID REFERENCES projects(id);")
+    op.execute(
+        """
+        ALTER TABLE transactions
+        ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id);
+        """
+    )
     op.execute(
         """
         UPDATE transactions
@@ -49,7 +56,7 @@ def upgrade() -> None:
           AND EXISTS (SELECT 1 FROM projects LIMIT 1);
         """
     )
-    op.execute("CREATE INDEX idx_transactions_project ON transactions(project_id);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_transactions_project ON transactions(project_id);")
 
 
 def downgrade() -> None:
