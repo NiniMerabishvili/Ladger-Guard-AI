@@ -16,5 +16,5 @@ assert '0002_projects' in s.get_heads(), s.get_heads()"
 
 EXPOSE 8000
 
-# Railway/Render set $PORT; must run via sh so the variable expands.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Python reads PORT from env — works even when Railway does not expand $PORT in CMD.
+CMD ["python", "-m", "app.run"]

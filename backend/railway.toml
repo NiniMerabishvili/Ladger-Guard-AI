@@ -4,6 +4,6 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Wrap in sh so $PORT expands (Railway does not expand it for bare exec forms).
-startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+# Prefer this over uvicorn --port $PORT (Railway may not expand $PORT).
+startCommand = "python -m app.run"
 restartPolicyType = "ON_FAILURE"
