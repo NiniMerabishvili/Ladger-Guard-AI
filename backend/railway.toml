@@ -4,7 +4,6 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Migrations are NOT run on boot (see Dockerfile). Apply with:
-#   python -m app.db.migrate
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# Wrap in sh so $PORT expands (Railway does not expand it for bare exec forms).
+startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 restartPolicyType = "ON_FAILURE"
