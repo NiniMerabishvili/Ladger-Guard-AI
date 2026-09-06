@@ -1,7 +1,10 @@
 import type {
   Decision,
   HealthStatus,
+  IngestResult,
   Metrics,
+  Project,
+  ReconcileResult,
   ReviewRequest,
   Transaction,
   TransactionQuery,
@@ -23,6 +26,15 @@ function detailMessage(payload: unknown, fallback: string): string {
   if (typeof payload === "object" && payload && "detail" in payload) {
     const detail = (payload as { detail: unknown }).detail;
     if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) =>
+          typeof item === "object" && item && "msg" in item
+            ? String((item as { msg: unknown }).msg)
+            : JSON.stringify(item),
+        )
+        .join("; ");
+    }
   }
   return fallback;
 }
@@ -37,9 +49,14 @@ function queryString(params: Record<string, string | undefined>): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  if (!isForm && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers,
   });
   if (!response.ok) {
     let payload: unknown = null;
@@ -61,7 +78,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<HealthStatus>("/health"),
-  getMetrics: () => request<Metrics>("/metrics"),
+  listProjects: () => request<Project[]>("/projects"),
+  createProject: (name?: string) =>
+    request<Project>("/projects", {
+      method: "POST",
+      body: JSON.stringify({ name: name ?? null }),
+    }),
+  getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
+  getMetrics: (projectId?: string) =>
+    request<Metrics>(`/metrics${queryString({ project_id: projectId })}`),
   getTransactions: (query: TransactionQuery | string = {}) => {
     const filters = typeof query === "string" ? { status: query } : query;
     return request<Transaction[]>(
@@ -70,6 +95,7 @@ export const api = {
         source: filters.source,
         date_from: filters.date_from,
         date_to: filters.date_to,
+        project_id: filters.project_id,
       })}`,
     );
   },
@@ -80,7 +106,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ reviewed_by: "reviewer", ...body }),
     }),
-  ingest: () => request<Record<string, string>>("/ingest", { method: "POST" }),
-  runReconciliation: () =>
-    request<Record<string, string>>("/reconcile/run", { method: "POST" }),
+  ingestUploads: (bankFile: File, ledgerFile: File, projectId: string) => {
+    const form = new FormData();
+    form.append("bank_file", bankFile);
+    form.append("ledger_file", ledgerFile);
+    form.append("project_id", projectId);
+    return request<IngestResult>("/ingest", { method: "POST", body: form });
+  },
+  runReconciliation: (projectId: string) =>
+    request<ReconcileResult>(
+      `/reconcile/run${queryString({ project_id: projectId })}`,
+      { method: "POST" },
+    ),
 };

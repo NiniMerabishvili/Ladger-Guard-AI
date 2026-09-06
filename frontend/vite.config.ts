@@ -2,8 +2,13 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
 
-function spaBypass(req: { headers: { accept?: string } }) {
+function spaBypass(req: { method?: string; url?: string; headers: { accept?: string } }) {
   if (req.headers.accept?.includes("text/html")) {
+    return "/index.html";
+  }
+  // Page route `/review` collides with API prefix `/review/{id}` — never proxy bare GET /review.
+  const path = (req.url ?? "").split("?")[0];
+  if (req.method === "GET" && path === "/review") {
     return "/index.html";
   }
   return undefined;
@@ -21,6 +26,7 @@ export default defineConfig({
       [
         "/ingest",
         "/reconcile",
+        "/projects",
         "/transactions",
         "/decisions",
         "/review",

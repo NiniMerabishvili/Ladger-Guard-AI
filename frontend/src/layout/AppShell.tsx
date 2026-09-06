@@ -1,4 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
+import { useActiveProject } from "../context/ProjectContext";
 import { cx } from "../lib/ui";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -8,12 +10,18 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   );
 
 export function AppShell() {
+  const { activeProjectId } = useActiveProject();
+
   return (
     <div className="grid min-h-screen lg:grid-cols-[248px_1fr]">
       <aside className="border-b border-line bg-ink/92 px-5 py-7 backdrop-blur-md lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="mb-9 flex items-start gap-3">
-          <div
-            className="size-9 rounded-[10px] bg-gradient-to-br from-mint to-[#1f8f74] shadow-[0_0_0_4px_rgb(62_224_178_/_14%)]"
+          <img
+            src="/logo.png"
+            alt=""
+            width={36}
+            height={36}
+            className="size-9 object-contain"
             aria-hidden="true"
           />
           <div>
@@ -22,6 +30,12 @@ export function AppShell() {
           </div>
         </div>
         <nav className="flex flex-wrap gap-1.5 lg:flex-col" aria-label="Primary">
+          <NavLink to="/projects" className={navClass}>
+            Projects
+          </NavLink>
+          <NavLink to="/upload" className={navClass}>
+            Upload & run
+          </NavLink>
           <NavLink to="/" end className={navClass}>
             Dashboard
           </NavLink>
@@ -29,9 +43,18 @@ export function AppShell() {
             Review queue
           </NavLink>
         </nav>
+        {activeProjectId ? (
+          <p className="mt-6 break-all font-mono text-[11px] text-muted">
+            Active project
+            <br />
+            <span className="text-ink-text">{activeProjectId.slice(0, 8)}…</span>
+          </p>
+        ) : null}
       </aside>
       <div className="px-[18px] py-6 pb-10 lg:px-10 lg:py-8 lg:pb-12">
-        <Outlet />
+        <RouteErrorBoundary>
+          <Outlet />
+        </RouteErrorBoundary>
       </div>
     </div>
   );

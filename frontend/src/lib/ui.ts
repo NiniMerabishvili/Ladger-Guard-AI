@@ -28,6 +28,8 @@ export const badges = {
 
 export const panel = "rounded-2xl border border-dashed border-line px-9 py-9 text-muted";
 export const panelError = "rounded-2xl border border-dashed border-low/40 px-9 py-9 text-[#ffc2bd]";
+export const panelSuccess =
+  "rounded-2xl border border-dashed border-mint/40 bg-mint/8 px-9 py-9 text-mint";
 export const pageHeader = "mb-7 flex items-end justify-between gap-4";
 export const pageTitle = "mb-1.5 text-[1.7rem] font-semibold tracking-tight";
 export const pageLead = "m-0 max-w-xl text-muted";

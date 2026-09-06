@@ -1,8 +1,11 @@
+import { Link } from "react-router-dom";
 import { ReviewCard } from "../components/ReviewCard";
+import { useActiveProject } from "../context/ProjectContext";
 import { useReviewQueue } from "../hooks/useReviewQueue";
 import { btn, pageHeader, pageLead, pageTitle, panel, panelError } from "../lib/ui";
 
 export function ReviewQueue() {
+  const { activeProjectId } = useActiveProject();
   const { queueQuery, reviewMutation } = useReviewQueue();
 
   return (
@@ -11,24 +14,35 @@ export function ReviewQueue() {
         <div>
           <h2 className={pageTitle}>Review queue</h2>
           <p className={pageLead}>
-            These lines stayed below the 0.7 confidence line — like a $5,000 wire to a new vendor.
-            Approve, reject, or point it at a ledger row yourself.
+            Pending-review lines for the active project. Approve, reject, or point at a ledger row.
           </p>
         </div>
         <button
           type="button"
           className={btn}
           onClick={() => void queueQuery.refetch()}
-          disabled={queueQuery.isFetching}
+          disabled={!activeProjectId || queueQuery.isFetching}
         >
           {queueQuery.isFetching ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
-      {queueQuery.isError ? (
+      {!activeProjectId ? (
+        <p className={panel}>
+          No active project.{" "}
+          <Link className="text-mint hover:underline" to="/projects">
+            Create or open a project
+          </Link>
+          .
+        </p>
+      ) : null}
+
+      {activeProjectId && queueQuery.isError ? (
         <p className={panelError}>Could not load the review queue. Check that the API is running.</p>
       ) : null}
-      {queueQuery.isPending ? <p className={panel}>Loading review queue…</p> : null}
+      {activeProjectId && queueQuery.isPending ? (
+        <p className={panel}>Loading review queue…</p>
+      ) : null}
       {reviewMutation.isError ? <p className={panelError}>{reviewMutation.error.message}</p> : null}
       {queueQuery.data?.length === 0 ? (
         <p className={panel}>Nothing pending. High-confidence matches never land here.</p>

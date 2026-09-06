@@ -200,7 +200,7 @@ python -m scripts.compare_providers
 | Item | Status |
 |---|---|
 | Local demo | Dashboard + Review queue at http://localhost:5173 with API on :8000 |
-| Deployed URL | *Add after Railway/Render + Vercel deploy* |
+| Deployed URL | *Add after Railway/Render + Vercel deploy* — see [docs/DEPLOY.md](docs/DEPLOY.md) |
 | Demo GIF (30–60s) | *Add for LinkedIn after a recorded run* |
 
 **Suggested GIF path:** ingest → auto-match % on Dashboard → open Review queue → Approve a low-confidence wire → audit trail updates → ClickUp task appears.

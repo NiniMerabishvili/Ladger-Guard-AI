@@ -55,6 +55,22 @@ export interface TransactionQuery {
   source?: TransactionSource;
   date_from?: string;
   date_to?: string;
+  project_id?: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  status: string;
+  bank_filename: string | null;
+  ledger_filename: string | null;
+  summary: Record<string, unknown> | null;
+  total_transactions: number;
+  matched: number;
+  pending_review: number;
+  flagged: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 /** MethodBreakdown */
@@ -80,4 +96,22 @@ export interface Metrics {
 
 export interface HealthStatus {
   status: string;
+}
+
+export interface IngestResult {
+  bank_count: number;
+  ledger_count: number;
+  total: number;
+  project_id?: string | null;
+}
+
+export interface ReconcileResult {
+  matching_run_id: string;
+  processed: number;
+  skipped_resolved: number;
+  exact_rule: number;
+  semantic_match: number;
+  llm_agent: number;
+  decisions_written: number;
+  project_id?: string | null;
 }

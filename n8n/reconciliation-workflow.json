@@ -31,13 +31,13 @@
             {
               "id": "tn",
               "name": "task_name",
-              "value": "=Review {{$json.decision}} — {{$json.transaction_id}}",
+              "value": "={{$json.task_name || $json.description || ($json.decision + ' — ' + $json.transaction_id)}}",
               "type": "string"
             },
             {
               "id": "tb",
               "name": "task_body",
-              "value": "=Transaction: {{$json.transaction_id}}\nStatus: {{$json.decision}}\nConfidence: {{$json.confidence}}\nRisk score: {{$json.risk_score}}\nFactors: {{$json.risk_factors}}\nReasoning: {{$json.reasoning}}\nMethod: {{$json.method}}",
+              "value": "={{'Description: ' + ($json.description || $json.task_name || 'n/a') + '\\nCounterparty: ' + ($json.counterparty || 'n/a') + '\\nAmount: ' + ($json.amount != null ? $json.amount : 'n/a') + ' ' + ($json.currency || '') + '\\nDate: ' + ($json.date || 'n/a') + '\\nTransaction ID: ' + $json.transaction_id + '\\nStatus: ' + $json.decision + '\\nConfidence: ' + $json.confidence + '\\nRisk score: ' + $json.risk_score + '\\nFactors: ' + $json.risk_factors + '\\nReasoning: ' + ($json.reasoning || '') + '\\nMethod: ' + $json.method}}",
               "type": "string"
             },
             {
