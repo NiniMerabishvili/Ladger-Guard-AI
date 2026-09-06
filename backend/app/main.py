@@ -36,7 +36,9 @@ def _warm_embedding_model() -> None:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     import asyncio
 
-    await asyncio.to_thread(_warm_embedding_model)
+    # Do not block readiness on model download/load — Railway health checks
+    # time out and the UI gets CORS/502 failures while warmup runs.
+    asyncio.create_task(asyncio.to_thread(_warm_embedding_model))
     yield
 
 
