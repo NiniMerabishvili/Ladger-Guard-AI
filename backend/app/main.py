@@ -34,11 +34,9 @@ def _warm_embedding_model() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    import asyncio
-
-    # Do not block readiness on model download/load — Railway health checks
-    # time out and the UI gets CORS/502 failures while warmup runs.
-    asyncio.create_task(asyncio.to_thread(_warm_embedding_model))
+    # Intentionally no embedding warmup here. On Railway small instances,
+    # downloading/loading MiniLM at boot OOMs or hangs and the edge returns 502
+    # even though the deployment shows Active.
     yield
 
 
