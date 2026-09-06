@@ -197,6 +197,7 @@ Then open the Vercel Review queue and Approve one item.
 | Frontend calls localhost | `VITE_API_URL` missing → rebuild on Vercel |
 | OOM on Railway | Bump memory, or keep Tier 2 off until you have RAM (`local` model is heavy) |
 | ClickUp empty | Check n8n execution log; body often under `$json.body.*` on Cloud |
+| `Can't locate revision identified by '0002_projects'` | Supabase is already stamped at `0002_projects`, but the deploy image is missing that migration. Set Railway **Root Directory** to `backend`, redeploy from latest `main`, and **clear build cache**. Confirm the build log shows the Dockerfile assert for `0002_projects.py`. |
 
 ---
 
