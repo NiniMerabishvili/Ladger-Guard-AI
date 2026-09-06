@@ -27,9 +27,9 @@ export function MetricsCards({ metrics }: MetricsCardsProps) {
           : `False-positive rate ${formatPct(metrics.false_positive_rate * 100)}`,
     },
     {
-      label: "LLM spend",
+      label: "AI spend",
       value: formatUsd(metrics.estimated_llm_cost_usd),
-      hint: `Labor savings ${formatUsd(metrics.estimated_manual_labor_savings_usd)} (assumption)`,
+      hint: `Embeddings + LLM running total · labor savings ${formatUsd(metrics.estimated_manual_labor_savings_usd)} (assumption)`,
     },
   ];
 
