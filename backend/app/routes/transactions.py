@@ -19,6 +19,7 @@ def list_transactions_route(
     source: str | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    project_id: UUID | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[TransactionListItem]:
     return list_transactions(
@@ -27,6 +28,7 @@ def list_transactions_route(
         source=source,
         date_from=date_from,
         date_to=date_to,
+        project_id=project_id,
     )
 
 

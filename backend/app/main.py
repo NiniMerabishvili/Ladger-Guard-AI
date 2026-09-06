@@ -11,6 +11,7 @@ from app.routes import (
     decisions,
     ingest,
     metrics,
+    projects,
     reconcile,
     review,
     transactions,
@@ -60,6 +61,7 @@ def health() -> dict[str, str]:
 
 app.include_router(ingest.router)
 app.include_router(reconcile.router)
+app.include_router(projects.router)
 app.include_router(transactions.router)
 app.include_router(decisions.router)
 app.include_router(review.router)

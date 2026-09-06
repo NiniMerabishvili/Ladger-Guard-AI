@@ -1,4 +1,4 @@
-"""Transaction and Decision ORM models."""
+"""Transaction, Decision, and Project ORM models."""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -15,6 +15,24 @@ class Base(DeclarativeBase):
     pass
 
 
+class Project(Base):
+    __tablename__ = "projects"
+    __table_args__ = (Index("idx_projects_created", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open")
+    bank_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ledger_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="project")
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
@@ -25,9 +43,13 @@ class Transaction(Base):
             postgresql_with={"lists": 100},
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
+        Index("idx_transactions_project", "project_id"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True
+    )
     source: Mapped[str] = mapped_column(
         Enum("bank", "ledger", name="source_enum", create_type=False),
         nullable=False,
@@ -41,6 +63,7 @@ class Transaction(Base):
     status: Mapped[str] = mapped_column(String(20), default="unmatched")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    project: Mapped[Project | None] = relationship(back_populates="transactions")
     decisions: Mapped[list["Decision"]] = relationship(
         back_populates="transaction",
         foreign_keys="Decision.transaction_id",

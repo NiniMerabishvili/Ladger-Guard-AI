@@ -1,6 +1,8 @@
 """GET /metrics — dashboard aggregates."""
 
-from fastapi import APIRouter, Depends
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,5 +13,8 @@ router = APIRouter(tags=["metrics"])
 
 
 @router.get("/metrics", response_model=MetricsRead)
-def get_metrics(db: Session = Depends(get_db)) -> MetricsRead:
-    return collect_metrics(db)
+def get_metrics(
+    project_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> MetricsRead:
+    return collect_metrics(db, project_id=project_id)

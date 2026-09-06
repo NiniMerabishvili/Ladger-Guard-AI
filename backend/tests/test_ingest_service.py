@@ -2,8 +2,10 @@
 
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
+from app.db.models import Project
 from app.schemas.transaction import TransactionCreate
 from app.services.ingest_service import ingest_files, ingest_uploads, persist_transactions
 
@@ -51,8 +53,15 @@ def test_ingest_uploads_from_bytes() -> None:
     bank = header + b"b1,2026-09-01,5000.00,USD,UNKNOWN VENDOR WIRE,ACME LLC\n"
     ledger = header + b"l1,2026-09-01,4.50,USD,STARBUCKS CARD,STARBUCKS\n"
     db = MagicMock()
-    result = ingest_uploads(db, bank_bytes=bank, ledger_bytes=ledger)
+    project_id = uuid4()
+    project = Project(id=project_id, name="Demo", status="open")
+    with (
+        patch("app.services.ingest_service.get_project", return_value=project),
+        patch("app.services.ingest_service.clear_project_data") as clear,
+    ):
+        result = ingest_uploads(db, bank_bytes=bank, ledger_bytes=ledger, project_id=project_id)
     assert result["bank_count"] == 1
     assert result["ledger_count"] == 1
     assert result["total"] == 2
-    assert db.execute.call_count == 1  # TRUNCATE workspace
+    assert result["project_id"] == str(project_id)
+    clear.assert_called_once()

@@ -39,8 +39,11 @@ def list_transactions(
     source: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    project_id: UUID | None = None,
 ) -> list[TransactionListItem]:
     stmt = select(Transaction)
+    if project_id is not None:
+        stmt = stmt.where(Transaction.project_id == project_id)
     if status:
         stmt = stmt.where(Transaction.status == status)
     if source:

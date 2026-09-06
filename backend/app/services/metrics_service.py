@@ -1,6 +1,7 @@
 """Dashboard aggregates for GET /metrics."""
 
 from collections import Counter
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -53,13 +54,16 @@ def compute_metrics(
     )
 
 
-def collect_metrics(db: Session) -> MetricsRead:
-    status_rows = db.execute(
-        select(Transaction.status, func.count()).group_by(Transaction.status)
-    ).all()
-    method_rows = db.execute(
-        select(Decision.method, func.count()).group_by(Decision.method)
-    ).all()
+def collect_metrics(db: Session, project_id: UUID | None = None) -> MetricsRead:
+    status_stmt = select(Transaction.status, func.count()).group_by(Transaction.status)
+    method_stmt = select(Decision.method, func.count()).group_by(Decision.method)
+    if project_id is not None:
+        status_stmt = status_stmt.where(Transaction.project_id == project_id)
+        method_stmt = method_stmt.join(
+            Transaction, Decision.transaction_id == Transaction.id
+        ).where(Transaction.project_id == project_id)
+    status_rows = db.execute(status_stmt).all()
+    method_rows = db.execute(method_stmt).all()
     return compute_metrics(
         Counter({status: count for status, count in status_rows}),
         Counter({method: count for method, count in method_rows}),

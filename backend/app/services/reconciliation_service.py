@@ -105,6 +105,7 @@ def run_reconciliation(
     db: Session,
     run_id: UUID | None = None,
     *,
+    project_id: UUID | None = None,
     score_fn: ScoreFn | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     skip_semantic: bool = False,
@@ -137,36 +138,35 @@ def run_reconciliation(
         provider = get_embedding_provider()
 
     if bank_rows is None:
-        bank_rows = list(
-            db.scalars(
-                select(Transaction).where(
-                    Transaction.source == "bank",
-                    Transaction.status == "unmatched",
-                )
-            ).all()
+        stmt = select(Transaction).where(
+            Transaction.source == "bank",
+            Transaction.status == "unmatched",
         )
+        if project_id is not None:
+            stmt = stmt.where(Transaction.project_id == project_id)
+        bank_rows = list(db.scalars(stmt).all())
     else:
         bank_rows = [tx for tx in bank_rows if is_open_for_matching(tx)]
 
     if ledger_rows is None:
-        ledger_open = list(
-            db.scalars(
-                select(Transaction).where(
-                    Transaction.source == "ledger",
-                    Transaction.status == "unmatched",
-                )
-            ).all()
+        stmt = select(Transaction).where(
+            Transaction.source == "ledger",
+            Transaction.status == "unmatched",
         )
+        if project_id is not None:
+            stmt = stmt.where(Transaction.project_id == project_id)
+        ledger_open = list(db.scalars(stmt).all())
     else:
         ledger_open = [tx for tx in ledger_rows if is_open_for_matching(tx)]
 
     try:
-        resolved_count = db.scalar(
-            select(func.count()).select_from(Transaction).where(
-                Transaction.source == "bank",
-                Transaction.status.in_(tuple(RESOLVED_STATUSES)),
-            )
+        resolved_stmt = select(func.count()).select_from(Transaction).where(
+            Transaction.source == "bank",
+            Transaction.status.in_(tuple(RESOLVED_STATUSES)),
         )
+        if project_id is not None:
+            resolved_stmt = resolved_stmt.where(Transaction.project_id == project_id)
+        resolved_count = db.scalar(resolved_stmt)
         skipped = int(resolved_count or 0)
     except Exception:
         skipped = 0
