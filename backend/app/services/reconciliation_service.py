@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -12,12 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.models import Decision, Transaction
-from app.matching.embedding_provider import EmbeddingProvider
-from app.matching.tier1_rules import MatchResult, try_exact_match
+from app.matching.tier1_rules import AmountIndex, MatchResult
 from app.matching.tier2_semantic import ensure_embeddings, try_semantic_match
 from app.services.audit_service import record_decision
 from app.services.n8n_service import build_n8n_payload, should_notify
 from app.services.review_service import apply_review_threshold
+
+if TYPE_CHECKING:
+    from app.matching.embedding_provider import EmbeddingProvider
 
 # Once the pipeline (or a human) has decided, re-runs must not touch the row again.
 RESOLVED_STATUSES = frozenset({"matched", "flagged", "pending_review"})
@@ -45,6 +47,8 @@ def _apply_match(
     reasoning: dict[str, Any] | None,
     matching_run_id: UUID,
     model_used: str | None = None,
+    ledger_by_id: dict[UUID, Transaction] | None = None,
+    flush: bool = False,
 ) -> Decision:
     row = record_decision(
         db,
@@ -56,15 +60,21 @@ def _apply_match(
         reasoning=reasoning,
         model_used=model_used,
         matching_run_id=matching_run_id,
+        flush=flush,
     )
     bank_tx.status = decision
     db.add(bank_tx)
-    ledger = db.get(Transaction, matched_id)
+    ledger = None
+    if ledger_by_id is not None:
+        ledger = ledger_by_id.get(matched_id)
+    if ledger is None:
+        ledger = db.get(Transaction, matched_id)
     if ledger is not None and is_open_for_matching(ledger):
         ledger.status = "matched" if decision == "matched" else ledger.status
         if decision == "matched":
             db.add(ledger)
-    db.flush()
+    if flush:
+        db.flush()
     return row
 
 
@@ -73,6 +83,8 @@ def _apply_agent_outcome(
     bank_tx: Transaction,
     agent_result: dict[str, Any],
     matching_run_id: UUID,
+    *,
+    flush: bool = False,
 ) -> Decision:
     risk = float(agent_result["risk_score"])
     confidence = risk
@@ -87,10 +99,12 @@ def _apply_agent_outcome(
         reasoning=agent_result,
         model_used=settings.LLM_PROVIDER,
         matching_run_id=matching_run_id,
+        flush=flush,
     )
     bank_tx.status = decision
     db.add(bank_tx)
-    db.flush()
+    if flush:
+        db.flush()
     return row
 
 
@@ -159,6 +173,9 @@ def run_reconciliation(
     else:
         ledger_open = [tx for tx in ledger_rows if is_open_for_matching(tx)]
 
+    ledger_by_id: dict[UUID, Transaction] = {row.id: row for row in ledger_open}
+    amount_index = AmountIndex.from_rows(ledger_open)
+
     try:
         resolved_stmt = select(func.count()).select_from(Transaction).where(
             Transaction.source == "bank",
@@ -189,7 +206,7 @@ def run_reconciliation(
             continue
         summary["processed"] += 1
 
-        tier1 = try_exact_match(bank_tx, ledger_open)
+        tier1 = amount_index.match(bank_tx)
         if tier1.matched and tier1.matched_id is not None:
             _apply_match(
                 db,
@@ -200,8 +217,10 @@ def run_reconciliation(
                 confidence=1.0,
                 reasoning={"rule": "amount+date"},
                 matching_run_id=matching_run_id,
+                ledger_by_id=ledger_by_id,
             )
-            ledger_open = [row for row in ledger_open if row.id != tier1.matched_id]
+            amount_index.remove(tier1.matched_id)
+            ledger_by_id.pop(tier1.matched_id, None)
             summary["exact_rule"] += 1
             summary["decisions_written"] += 1
             continue
@@ -210,12 +229,23 @@ def run_reconciliation(
     agent_leftovers: list[Transaction] = []
 
     if after_tier1 and not skip_semantic and provider is not None:
-        ensure_embeddings(db, after_tier1 + ledger_open, provider)
+        # Defer flush — embeddings live on ORM objects for in-memory Tier 2.
+        ensure_embeddings(
+            db,
+            after_tier1 + list(ledger_by_id.values()),
+            provider,
+            flush=False,
+        )
 
     for bank_tx in after_tier1:
         tier2 = MatchResult(matched=False)
         if not skip_semantic:
-            tier2 = try_semantic_match(bank_tx, db, provider=provider)
+            tier2 = try_semantic_match(
+                bank_tx,
+                db,
+                provider=provider,
+                ledger_pool=list(ledger_by_id.values()),
+            )
         if tier2.matched and tier2.matched_id is not None:
             decision = apply_review_threshold(tier2.confidence, intended="matched")
             _apply_match(
@@ -227,9 +257,11 @@ def run_reconciliation(
                 confidence=tier2.confidence,
                 reasoning={"similarity": tier2.confidence},
                 matching_run_id=matching_run_id,
+                ledger_by_id=ledger_by_id,
             )
             if decision == "matched":
-                ledger_open = [row for row in ledger_open if row.id != tier2.matched_id]
+                amount_index.remove(tier2.matched_id)
+                ledger_by_id.pop(tier2.matched_id, None)
             summary["semantic_match"] += 1
             summary["decisions_written"] += 1
             continue
@@ -257,4 +289,6 @@ def run_reconciliation(
 
         asyncio.run(_run_agent_pass())
 
+    # One round-trip for all status + decision + embedding writes.
+    db.flush()
     return summary

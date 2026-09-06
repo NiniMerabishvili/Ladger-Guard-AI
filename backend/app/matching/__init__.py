@@ -6,10 +6,11 @@ from app.matching.embedding_provider import (
     OpenAIEmbeddingProvider,
     get_embedding_provider,
 )
-from app.matching.tier1_rules import MatchResult, try_exact_match
+from app.matching.tier1_rules import AmountIndex, MatchResult, try_exact_match
 from app.matching.tier2_semantic import decide_semantic_match, try_semantic_match
 
 __all__ = [
+    "AmountIndex",
     "EmbeddingProvider",
     "LocalSentenceTransformerProvider",
     "MatchResult",

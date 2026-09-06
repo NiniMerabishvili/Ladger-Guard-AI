@@ -58,7 +58,8 @@ def load_csv_bytes(content: bytes, label: str = "upload") -> pd.DataFrame:
 
 
 def rows_from_frame(frame: pd.DataFrame, source: str) -> list[TransactionCreate]:
-    return [normalize_transaction(row.to_dict(), source) for _, row in frame.iterrows()]
+    records = frame.loc[:, list(REQUIRED_COLUMNS)].to_dict("records")
+    return [normalize_transaction(record, source) for record in records]
 
 
 def ingest_csv(path: Path, source: str) -> list[TransactionCreate]:

@@ -47,6 +47,17 @@ def clear_project_data(db: Session, project_id: UUID) -> None:
     db.flush()
 
 
+def delete_project(db: Session, project_id: UUID) -> bool:
+    """Remove a project and all of its transactions / decisions."""
+    project = get_project(db, project_id)
+    if project is None:
+        return False
+    clear_project_data(db, project_id)
+    db.delete(project)
+    db.flush()
+    return True
+
+
 def project_counts(db: Session, project_id: UUID) -> dict[str, int]:
     rows = db.execute(
         select(Transaction.status, func.count())

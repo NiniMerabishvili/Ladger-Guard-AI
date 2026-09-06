@@ -85,6 +85,8 @@ export const api = {
       body: JSON.stringify({ name: name ?? null }),
     }),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
+  deleteProject: (projectId: string) =>
+    request<void>(`/projects/${projectId}`, { method: "DELETE" }),
   getMetrics: (projectId?: string) =>
     request<Metrics>(`/metrics${queryString({ project_id: projectId })}`),
   getTransactions: (query: TransactionQuery | string = {}) => {

@@ -5,7 +5,6 @@ from typing import Protocol
 import httpx
 
 from app.config import settings
-from app.services.cost_tracker import log_call
 
 LOCAL_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
@@ -37,6 +36,8 @@ class LocalSentenceTransformerProvider:
     def embed_many(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        from app.services.cost_tracker import log_call
+
         model = self._load_model()
         vectors = model.encode(  # type: ignore[union-attr]
             texts,
@@ -45,7 +46,8 @@ class LocalSentenceTransformerProvider:
             batch_size=64,
         )
         log_call("local", self.model_name, len(texts))
-        return [[float(x) for x in row.tolist()] for row in vectors]
+        # encode already returns float32; tolist() is enough (avoid per-float Python casts).
+        return vectors.tolist()
 
 
 class OpenAIEmbeddingProvider:
@@ -70,6 +72,8 @@ class OpenAIEmbeddingProvider:
             return []
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY is not set")
+        from app.services.cost_tracker import log_call
+
         response = httpx.post(
             "https://api.openai.com/v1/embeddings",
             headers={"Authorization": f"Bearer {self.api_key}"},

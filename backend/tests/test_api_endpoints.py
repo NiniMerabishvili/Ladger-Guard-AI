@@ -188,7 +188,10 @@ def test_ingest_endpoint_persists_normalized_rows() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"bank_count": 2, "ledger_count": 2, "total": 4}
+    payload = response.json()
+    assert payload["bank_count"] == 2
+    assert payload["ledger_count"] == 2
+    assert payload["total"] == 4
     mocked.assert_called_once()
     db.commit.assert_called_once()
 

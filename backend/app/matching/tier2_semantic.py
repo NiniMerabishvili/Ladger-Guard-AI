@@ -1,4 +1,4 @@
-"""Tier 2 — embeddings + pgvector semantic search."""
+"""Tier 2 — embeddings + semantic search (in-memory for a reconcile run)."""
 
 from dataclasses import dataclass
 from datetime import date
@@ -32,6 +32,12 @@ def _as_float(amount: object) -> float:
 
 def opposite_source(source: str) -> str:
     return "ledger" if source == "bank" else "bank"
+
+
+def _dot(a: list[float], b: list[float]) -> float:
+    """Cosine similarity for L2-normalized vectors (local MiniLM uses normalize_embeddings)."""
+    size = min(len(a), len(b))
+    return sum(a[i] * b[i] for i in range(size))
 
 
 def amount_and_date_close(
@@ -78,6 +84,8 @@ def ensure_embeddings(
     db: Session,
     rows: list[Transaction],
     provider: EmbeddingProvider,
+    *,
+    flush: bool = True,
 ) -> int:
     """Batch-embed any rows missing vectors (one encode call for the whole set)."""
     missing = [row for row in rows if row.embedding is None]
@@ -87,7 +95,8 @@ def ensure_embeddings(
     for row, vector in zip(missing, vectors, strict=True):
         row.embedding = vector
         db.add(row)
-    db.flush()
+    if flush:
+        db.flush()
     return len(missing)
 
 
@@ -105,24 +114,44 @@ def embed_unmatched_transactions(db: Session, provider: EmbeddingProvider | None
     return ensure_embeddings(db, rows, provider)
 
 
+def find_similar_in_memory(
+    query_embedding: list[float],
+    candidates: list[Transaction],
+    *,
+    exclude_id: UUID | None = None,
+    limit: int = SEARCH_LIMIT,
+) -> list[SemanticCandidate]:
+    """Rank open opposite-source rows by cosine similarity without per-row SQL."""
+    scored: list[SemanticCandidate] = []
+    for row in candidates:
+        if exclude_id is not None and row.id == exclude_id:
+            continue
+        embedding = row.embedding
+        if embedding is None:
+            continue
+        scored.append(
+            SemanticCandidate(
+                id=row.id,
+                description=row.description,
+                amount=_as_float(row.amount),
+                date=row.date,
+                similarity=_dot(query_embedding, list(embedding)),
+            )
+        )
+    scored.sort(key=lambda item: item.similarity, reverse=True)
+    return scored[:limit]
+
+
 def search_similar(
     db: Session,
     query_embedding: list[float],
     opposite: str,
     *,
+    project_id: UUID | None = None,
     exclude_id: UUID | None = None,
     limit: int = SEARCH_LIMIT,
 ) -> list[SemanticCandidate]:
-    """Nearest unmatched rows of the opposite source (cosine similarity).
-
-    Equivalent SQL:
-        SELECT id, description, amount, date,
-               1 - (embedding <=> :query_embedding) AS similarity
-        FROM transactions
-        WHERE source = :opposite_source AND status = 'unmatched'
-        ORDER BY embedding <=> :query_embedding
-        LIMIT 5;
-    """
+    """Nearest unmatched rows of the opposite source (cosine similarity via pgvector)."""
     distance = Transaction.embedding.cosine_distance(query_embedding)
     similarity = (1 - distance).label("similarity")
     stmt = (
@@ -139,6 +168,8 @@ def search_similar(
         .order_by(distance)
         .limit(limit)
     )
+    if project_id is not None:
+        stmt = stmt.where(Transaction.project_id == project_id)
     if exclude_id is not None:
         stmt = stmt.where(Transaction.id != exclude_id)
 
@@ -158,14 +189,24 @@ def try_semantic_match(
     transaction: Transaction,
     db: Session,
     provider: EmbeddingProvider | None = None,
+    *,
+    ledger_pool: list[Transaction] | None = None,
 ) -> MatchResult:
     """Find a semantic match among unmatched transactions of the opposite source."""
     provider = provider or get_embedding_provider()
     query_embedding = transaction.embedding or store_embedding(db, transaction, provider)
-    candidates = search_similar(
-        db,
-        query_embedding,
-        opposite_source(transaction.source),
-        exclude_id=transaction.id,
-    )
+    if ledger_pool is not None:
+        candidates = find_similar_in_memory(
+            query_embedding,
+            ledger_pool,
+            exclude_id=transaction.id,
+        )
+    else:
+        candidates = search_similar(
+            db,
+            query_embedding,
+            opposite_source(transaction.source),
+            project_id=transaction.project_id,
+            exclude_id=transaction.id,
+        )
     return decide_semantic_match(transaction, candidates)

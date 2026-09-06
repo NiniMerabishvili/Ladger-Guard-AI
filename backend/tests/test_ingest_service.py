@@ -26,7 +26,7 @@ def test_persist_transactions_marks_rows_unmatched() -> None:
     assert len(created) == 1
     assert created[0].status == "unmatched"
     assert created[0].source == "bank"
-    db.add.assert_called()
+    db.execute.assert_called_once()
     db.flush.assert_called_once()
 
 
@@ -45,7 +45,7 @@ def test_ingest_files_reads_both_csvs(tmp_path: Path) -> None:
     db = MagicMock()
     result = ingest_files(db, bank_path=bank, ledger_path=ledger)
     assert result == {"bank_count": 1, "ledger_count": 1, "total": 2}
-    assert db.add.call_count == 2
+    assert db.execute.call_count == 2
 
 
 def test_ingest_uploads_from_bytes() -> None:

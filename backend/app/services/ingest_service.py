@@ -3,6 +3,7 @@
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.config import _BACKEND_DIR
@@ -22,24 +23,28 @@ def persist_transactions(
     *,
     project_id: UUID | None = None,
 ) -> list[Transaction]:
-    """Insert normalized rows as unmatched transactions."""
-    created: list[Transaction] = []
+    """Bulk-insert normalized rows as unmatched transactions."""
+    if not rows:
+        return []
+
+    mappings: list[dict] = []
     for row in rows:
-        tx = Transaction(
-            id=uuid4(),
-            project_id=project_id,
-            source=row.source,
-            date=row.date,
-            amount=row.amount,
-            currency=row.currency,
-            description=row.description,
-            counterparty=row.counterparty,
-            status="unmatched",
+        mappings.append(
+            {
+                "id": uuid4(),
+                "project_id": project_id,
+                "source": row.source,
+                "date": row.date,
+                "amount": row.amount,
+                "currency": row.currency,
+                "description": row.description,
+                "counterparty": row.counterparty,
+                "status": "unmatched",
+            }
         )
-        db.add(tx)
-        created.append(tx)
+    db.execute(insert(Transaction), mappings)
     db.flush()
-    return created
+    return [Transaction(**mapping) for mapping in mappings]
 
 
 def _counts(bank_rows: list[TransactionCreate], ledger_rows: list[TransactionCreate]) -> dict[str, int]:

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.services.project_service import (
     create_project,
+    delete_project,
     get_project,
     list_projects,
     project_to_dict,
@@ -59,3 +60,10 @@ def get_project_route(project_id: UUID, db: Session = Depends(get_db)) -> Projec
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return ProjectRead(**project_to_dict(project))
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project_route(project_id: UUID, db: Session = Depends(get_db)) -> None:
+    if not delete_project(db, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    db.commit()

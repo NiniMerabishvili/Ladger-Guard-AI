@@ -21,8 +21,12 @@ def record_decision(
     model_used: str | None = None,
     reviewed_by: str | None = None,
     matching_run_id: UUID | None = None,
+    flush: bool = True,
 ) -> Decision:
-    """Insert a new decisions row. Existing rows are never updated."""
+    """Insert a new decisions row. Existing rows are never updated.
+
+    Pass ``flush=False`` during batch reconcile so many decisions share one flush.
+    """
     row = Decision(
         id=uuid4(),
         transaction_id=transaction_id,
@@ -37,7 +41,8 @@ def record_decision(
         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(row)
-    db.flush()
+    if flush:
+        db.flush()
     return row
 
 

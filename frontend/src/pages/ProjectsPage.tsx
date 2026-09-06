@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { useActiveProject } from "../context/ProjectContext";
 import {
   btn,
+  btnDanger,
   btnPrimary,
   pageHeader,
   pageLead,
@@ -34,6 +35,7 @@ export function ProjectsPage() {
   const queryClient = useQueryClient();
   const { activeProjectId, setActiveProjectId } = useActiveProject();
   const [name, setName] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const projectsQuery = useQuery({
     queryKey: PROJECTS_QUERY_KEY,
@@ -47,6 +49,29 @@ export function ProjectsPage() {
       setActiveProjectId(project.id);
       void queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
       navigate("/upload");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (projectId: string) => api.deleteProject(projectId),
+    onSuccess: (_data, projectId) => {
+      setDeletingId(null);
+      if (activeProjectId === projectId) {
+        setActiveProjectId(null);
+      }
+      try {
+        sessionStorage.removeItem(`ledger-guard:last-upload-run:${projectId}`);
+      } catch {
+        // ignore
+      }
+      void queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["upload-workspace", projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["metrics"] });
+      void queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: () => {
+      setDeletingId(null);
     },
   });
 
@@ -85,6 +110,9 @@ export function ProjectsPage() {
         </div>
         {createMutation.isError ? (
           <p className={panelError}>{createMutation.error.message}</p>
+        ) : null}
+        {deleteMutation.isError ? (
+          <p className={`${panelError} mt-3`}>{deleteMutation.error.message}</p>
         ) : null}
       </section>
 
@@ -132,6 +160,23 @@ export function ProjectsPage() {
                     <Link className={btn} to="/review" onClick={() => setActiveProjectId(project.id)}>
                       Review
                     </Link>
+                    <button
+                      type="button"
+                      className={btnDanger}
+                      disabled={deleteMutation.isPending}
+                      onClick={() => {
+                        const ok = window.confirm(
+                          `Delete “${project.name}”? This removes its uploads, matches, and review items permanently.`,
+                        );
+                        if (!ok) return;
+                        setDeletingId(project.id);
+                        deleteMutation.mutate(project.id);
+                      }}
+                    >
+                      {deletingId === project.id && deleteMutation.isPending
+                        ? "Deleting…"
+                        : "Delete"}
+                    </button>
                   </div>
                 </header>
                 <div className="grid gap-2 sm:grid-cols-4">
