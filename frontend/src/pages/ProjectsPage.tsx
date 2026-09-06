@@ -117,7 +117,9 @@ export function ProjectsPage() {
       </section>
 
       {projectsQuery.isError ? (
-        <p className={panelError}>Could not load projects. Is the API running?</p>
+        <p className={panelError}>
+          Could not load projects. {projectsQuery.error.message}
+        </p>
       ) : null}
       {projectsQuery.isPending ? <p className={panel}>Loading projects…</p> : null}
       {projectsQuery.data?.length === 0 ? (
