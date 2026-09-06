@@ -16,5 +16,5 @@ assert '0002_projects' in s.get_heads(), s.get_heads()"
 
 EXPOSE 8000
 
-# Python reads PORT from env — works even when Railway does not expand $PORT in CMD.
-CMD ["python", "-m", "app.run"]
+# Inline PORT read — works even if Custom Start Command overrides CMD.
+CMD ["python", "-c", "import os, uvicorn; uvicorn.run('app.main:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')))"]
