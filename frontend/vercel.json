@@ -1,5 +1,6 @@
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "ignoreCommand": "exit 1",
   "headers": [
     {
       "source": "/index.html",
