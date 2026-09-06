@@ -6,5 +6,3 @@ dockerfilePath = "Dockerfile"
 [deploy]
 startCommand = "python -m app.run"
 restartPolicyType = "ON_FAILURE"
-healthcheckPath = "/health"
-healthcheckTimeout = 30

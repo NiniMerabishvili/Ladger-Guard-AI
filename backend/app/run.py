@@ -14,7 +14,14 @@ def main() -> None:
     except Exception as exc:  # pragma: no cover
         print(f"failed to import uvicorn: {exc}", file=sys.stderr, flush=True)
         raise
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+        log_level="info",
+    )
 
 
 if __name__ == "__main__":
