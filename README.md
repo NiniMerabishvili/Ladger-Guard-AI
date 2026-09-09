@@ -1,5 +1,9 @@
 # Ledger Guard AI
 
+39-second walkthrough: upload → auto-match → flagged transaction → ClickUp task created via n8n
+
+https://github.com/user-attachments/assets/3611f2f7-d77b-4ed9-9725-4aa9474c9347
+
 Portfolio MVP for FinTech back-office ops: match a **bank statement** CSV to an **internal ledger**, score leftovers with an LLM, and send only ambiguous cases to a human — with a full audit trail on every decision.
 
 > Target on synthetic data: **≥70% auto-matched**, confidence **&lt; 0.7 never auto-resolved**, every decision append-only.
